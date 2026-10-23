@@ -34,3 +34,4 @@ EXPOSE 53/udp 53/tcp 953/tcp
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["named", "-g", "-u", "bind"]
+# Trigger build: Fri Oct 23 06:42:55 AM UTC 2026
