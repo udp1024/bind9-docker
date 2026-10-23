@@ -19,8 +19,12 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: write
+  packages: write
+
 env:
-  DOCKER_IMAGE: ${{ secrets.DOCKERHUB_USERNAME || 'udp1024' }}/bind9
+  DOCKER_IMAGE: udp1024/bind9
 
 jobs:
   check-version:
