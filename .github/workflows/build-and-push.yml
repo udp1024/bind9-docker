@@ -40,13 +40,18 @@ jobs:
         run: |
           set -e
           PPA_URL="https://ppa.launchpadcontent.net/isc/bind/ubuntu/dists/noble/main/binary-arm64/Packages.gz"
-          FULL_VER=$(curl -fsSL "$PPA_URL" | zcat | grep -E '^Package: bind9$' -A 1 | grep -E '^Version:' | head -n 1 | awk '{print $2}')
+          FULL_VER=$(curl -fsSL "$PPA_URL" | zcat | awk -v RS= '/Package: bind9\n/' | grep '^Version:' | head -n 1 | awk '{print $2}')
           echo "Full package version: $FULL_VER"
           
           # Extract upstream release version, e.g. from 1:9.20.30-1+ubuntu... -> 9.20.30
           CLEAN_VER=$(echo "$FULL_VER" | sed -E 's/^[0-9]+://; s/-.*//')
           MAJOR_MINOR=$(echo "$CLEAN_VER" | awk -F. '{print $1"."$2}')
           
+          if [ -z "$CLEAN_VER" ]; then
+            echo "Failed to extract BIND 9 version from PPA Packages"
+            exit 1
+          fi
+
           echo "Detected BIND version: $CLEAN_VER"
           echo "Major.Minor: $MAJOR_MINOR"
           echo "version=$CLEAN_VER" >> $GITHUB_OUTPUT
@@ -101,7 +106,12 @@ jobs:
         run: |
           VER="${{ needs.check-version.outputs.bind_version }}"
           MM="${{ needs.check-version.outputs.major_minor }}"
+          if [ -z "$VER" ]; then
+            echo "Error: BIND version is empty!"
+            exit 1
+          fi
           TAGS="${DOCKER_IMAGE}:${VER},${DOCKER_IMAGE}:${MM},${DOCKER_IMAGE}:latest"
+          echo "Generated tags: ${TAGS}"
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
 
       - name: Build and push multi-arch image
