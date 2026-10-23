@@ -1,0 +1,132 @@
+name: Build & Publish Multi-Arch BIND 9
+
+on:
+  schedule:
+    # Run daily at 06:00 UTC to check for upstream ISC updates
+    - cron: '0 6 * * *'
+  push:
+    branches:
+      - main
+    paths:
+      - 'Dockerfile'
+      - 'docker-entrypoint.sh'
+      - '.github/workflows/**'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build even if version already exists on Docker Hub'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  DOCKER_IMAGE: ${{ secrets.DOCKERHUB_USERNAME || 'udp1024' }}/bind9
+
+jobs:
+  check-version:
+    name: Check Upstream ISC BIND 9 Version
+    runs-on: ubuntu-latest
+    outputs:
+      bind_version: ${{ steps.get_version.outputs.version }}
+      major_minor: ${{ steps.get_version.outputs.major_minor }}
+      should_build: ${{ steps.check_tag.outputs.should_build }}
+    steps:
+      - name: Fetch latest BIND 9 version from official ISC PPA
+        id: get_version
+        run: |
+          set -e
+          PPA_URL="https://ppa.launchpadcontent.net/isc/bind/ubuntu/dists/noble/main/binary-arm64/Packages.gz"
+          FULL_VER=$(curl -fsSL "$PPA_URL" | zcat | grep -E '^Package: bind9$' -A 1 | grep -E '^Version:' | head -n 1 | awk '{print $2}')
+          echo "Full package version: $FULL_VER"
+          
+          # Extract upstream release version, e.g. from 1:9.20.30-1+ubuntu... -> 9.20.30
+          CLEAN_VER=$(echo "$FULL_VER" | sed -E 's/^[0-9]+://; s/-.*//')
+          MAJOR_MINOR=$(echo "$CLEAN_VER" | awk -F. '{print $1"."$2}')
+          
+          echo "Detected BIND version: $CLEAN_VER"
+          echo "Major.Minor: $MAJOR_MINOR"
+          echo "version=$CLEAN_VER" >> $GITHUB_OUTPUT
+          echo "major_minor=$MAJOR_MINOR" >> $GITHUB_OUTPUT
+
+      - name: Check if image tag already exists on Docker Hub
+        id: check_tag
+        run: |
+          TARGET_VER="${{ steps.get_version.outputs.version }}"
+          FORCE="${{ github.event.inputs.force_build }}"
+          
+          if [ "$FORCE" = "true" ] || [ "${{ github.event_name }}" = "push" ]; then
+            echo "Forced build or direct push detected. Proceeding with build."
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://hub.docker.com/v2/repositories/${DOCKER_IMAGE}/tags/${TARGET_VER}")
+          if [ "$HTTP_STATUS" -eq 200 ]; then
+            echo "Tag ${TARGET_VER} already exists on Docker Hub. Skipping build."
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          else
+            echo "Tag ${TARGET_VER} NOT found on Docker Hub (HTTP $HTTP_STATUS). Triggering build."
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          fi
+
+  build-and-push:
+    name: Build & Push Multi-Arch Image
+    needs: check-version
+    if: needs.check-version.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (for multi-arch emulation)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: 'linux/amd64,linux/arm64'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Generate tags
+        id: tags
+        run: |
+          VER="${{ needs.check-version.outputs.bind_version }}"
+          MM="${{ needs.check-version.outputs.major_minor }}"
+          TAGS="${DOCKER_IMAGE}:${VER},${DOCKER_IMAGE}:${MM},${DOCKER_IMAGE}:latest"
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+
+      - name: Build and push multi-arch image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Create Git Tag and GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/heads/main')
+        with:
+          tag_name: "v${{ needs.check-version.outputs.bind_version }}"
+          name: "BIND ${{ needs.check-version.outputs.bind_version }}"
+          body: |
+            Automated multi-arch release for ISC BIND ${{ needs.check-version.outputs.bind_version }}.
+            
+            Published to Docker Hub:
+            - `${{ env.DOCKER_IMAGE }}:${{ needs.check-version.outputs.bind_version }}`
+            - `${{ env.DOCKER_IMAGE }}:${{ needs.check-version.outputs.major_minor }}`
+            - `${{ env.DOCKER_IMAGE }}:latest`
+            
+            Architectures:
+            - `linux/amd64`
+            - `linux/arm64` (Raspberry Pi 4/5, AWS Graviton, Apple Silicon, etc.)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
