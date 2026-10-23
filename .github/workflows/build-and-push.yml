@@ -11,6 +11,7 @@ on:
       - 'Dockerfile'
       - 'docker-entrypoint.sh'
       - '.github/workflows/**'
+      - 'README.md'
   workflow_dispatch:
     inputs:
       force_build:
@@ -144,3 +145,21 @@ jobs:
             - `linux/arm64` (Raspberry Pi 4/5, AWS Graviton, Apple Silicon, etc.)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-dockerhub-readme:
+    name: Update Docker Hub Description
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Sync README to Docker Hub Overview
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ env.DOCKER_IMAGE }}
+          short-description: "Multi-arch (amd64/arm64) ISC BIND 9 DNS server built daily from official ISC PPA on Ubuntu 24.04."
+          readme-filepath: ./README.md
+

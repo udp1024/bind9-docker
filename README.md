@@ -1,44 +1,63 @@
-# Multi-Arch ISC BIND 9 Docker Image (`amd64` & `arm64`)
+# Multi-Arch ISC BIND 9 DNS Server (`amd64` / `arm64`)
 
 [![Build & Publish Multi-Arch BIND 9](https://github.com/udp1024/bind9-docker/actions/workflows/build-and-push.yml/badge.svg)](https://github.com/udp1024/bind9-docker/actions/workflows/build-and-push.yml)
+[![Docker Pulls](https://img.shields.io/docker/pulls/udp1024/bind9.svg)](https://hub.docker.com/r/udp1024/bind9)
+[![Docker Image Size](https://img.shields.io/docker/image-size/udp1024/bind9/latest)](https://hub.docker.com/r/udp1024/bind9)
+[![Architectures](https://img.shields.io/badge/architectures-amd64%20%7C%20arm64-blue.svg)](https://hub.docker.com/r/udp1024/bind9)
+[![GitHub Actions](https://img.shields.io/badge/build-automated%20daily-success.svg)](https://github.com/udp1024/bind9-docker)
 
-Automated, multi-architecture (`linux/amd64` and `linux/arm64`) Docker container for **ISC BIND 9**, built directly against the official [ISC Launchpad PPA](https://launchpad.net/~isc/+archive/ubuntu/bind) on Ubuntu 24.04 LTS (Noble).
-
----
-
-## Why this image exists
-
-1. **Native ARM64 Support:** The official ISC Docker Hub image (`internetsystemsconsortium/bind9`) only provides `linux/amd64` manifests, causing `exec format error` on ARM64 platforms like Raspberry Pi 4/5, AWS Graviton, and Apple Silicon.
-2. **Current Upstream Releases:** Canonical's `ubuntu/bind9:latest` image tracks default Ubuntu distro packages, which stay frozen on older minor releases (e.g., `9.20.11`). This image delivers modern point releases (e.g., `9.20.30`).
-3. **Automated Tracking:** A daily GitHub Actions workflow queries the official ISC PPA, detects new BIND 9 point releases, builds multi-arch images, and publishes them automatically to Docker Hub.
+Automated, multi-architecture Docker container running **ISC BIND 9**, built directly from the [official ISC Launchpad PPA](https://launchpad.net/~isc/+archive/ubuntu/bind) on Ubuntu 24.04 LTS (Noble Numbat).
 
 ---
 
-## Architectures Supported
+## ⚡ Why Use This Image?
 
-* `linux/amd64` (x86_64 servers & workstations)
-* `linux/arm64` (Raspberry Pi 4B/5, Apple Silicon, ARM64 cloud servers)
+| Feature | `udp1024/bind9` | Official `internetsystemsconsortium/bind9` | Distro `ubuntu/bind9` |
+| :--- | :---: | :---: | :---: |
+| **Native ARM64 / Raspberry Pi** |  **Yes** (`linux/arm64`) | ❌ No (`amd64` only) |  Yes |
+| **Latest ISC Point Releases** |  **Yes** (tracks official PPA) | ⚠️ Often lagging | ❌ Frozen on distro release |
+| **Automated Daily Sync** |  **Yes** (GitHub Actions at 06:00 UTC) | Manual / Infrequent | Distro release cycle |
+| **Clean Privilege Separation** |  **Yes** (runs as `bind:bind`) |  Yes |  Yes |
+
+1. **Native Multi-Arch:** Built natively for both `linux/amd64` and `linux/arm64`. Prevents `exec format error` on Apple Silicon, Raspberry Pi 4/5, and ARM64 cloud instances (AWS Graviton, Oracle Ampere).
+2. **Always Up-to-Date:** Standard distribution packages freeze on older releases. This image automatically tracks the official ISC PPA to provide current maintenance releases (e.g., BIND 9.20.x) with the latest security fixes and DNS standards support.
+3. **Automated CI/CD:** A scheduled runner checks the ISC PPA daily and automatically publishes new versions as multi-arch manifests.
 
 ---
 
-## Quick Start
+## 🖥️ Supported Architectures
 
-### Direct `docker run`
+* **`linux/amd64`**: x86_64 servers, workstations, and hypervisors.
+* **`linux/arm64`**: Raspberry Pi 4/5, Apple Silicon (M1/M2/M3/M4), AWS Graviton, Ampere Altra.
+
+---
+
+## 🏷️ Tags
+
+* **`latest`**: Points to the most recent stable BIND 9 build.
+* **`9.20`**: Tracks the latest release in the BIND 9.20 stable branch.
+* **`9.20.x`** *(e.g. `9.20.30`)*: Pinned specific patch releases for reproducible deployments.
+
+---
+
+## 🚀 Quick Start
+
+### 1. Direct `docker run`
 
 ```bash
 docker run -d \
-    --name bind9 \
-    --restart unless-stopped \
-    --net host \
-    -v /mnt/data/bind/conf:/etc/bind/conf \
-    -v /mnt/data/bind/zones:/var/cache/bind/zones \
-    -v /mnt/data/bind/hints:/var/cache/bind/hints \
-    -v /mnt/data/bind/logs:/var/log \
-    udp1024/bind9:latest \
-    named -g -c /etc/bind/conf/named.conf
+  --name bind9 \
+  --restart unless-stopped \
+  --net host \
+  -v /mnt/data/bind/conf:/etc/bind/conf \
+  -v /mnt/data/bind/zones:/var/cache/bind/zones \
+  -v /mnt/data/bind/hints:/var/cache/bind/hints \
+  -v /mnt/data/bind/logs:/var/log \
+  udp1024/bind9:latest \
+  named -g -c /etc/bind/conf/named.conf
 ```
 
-### Docker Compose
+### 2. Docker Compose
 
 ```yaml
 version: '3.8'
@@ -62,30 +81,41 @@ services:
 
 ---
 
-## Image Tags
+## ⚙️ Configuration & Volumes
 
-| Tag | Description |
-| --- | --- |
-| `latest` | Latest stable BIND 9 build |
-| `9.20` | Latest release within the 9.20 branch |
-| `9.20.30` | Pinned patch release |
+| Container Path | Description | Recommended Permissions |
+| :--- | :--- | :--- |
+| `/etc/bind/conf` | Configuration files (`named.conf`, options, local zones) | `bind:bind` |
+| `/var/cache/bind/zones` | Master, slave, and dynamic zone files | Read / Write for `bind:bind` |
+| `/var/cache/bind/hints` | Root hint files (`named.root`) | Read-only |
+| `/var/log` or `/var/log/named` | DNS query, security, and general logs | Read / Write for `bind:bind` |
+
+### Environment Variables
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `BIND9_USER` | `bind` | System user executing the `named` daemon. |
+| `USE_CONFIG_FILE_LOGGING` | *(unset)* | If set to any value, named starts with `-f` instead of `-g` to allow logging clauses in `named.conf` to handle all logging destinations. |
+| `TZ` | `UTC` | Timezone for the container log timestamps (e.g. `America/New_York`, `Europe/London`). |
 
 ---
 
-## Setup Automated Builds with GitHub Actions
+## 🔍 Verification
 
-To host and publish this yourself to your Docker Hub repository:
+Verify that BIND 9 is running and responding:
 
-1. Push this repository to GitHub:
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit for automated multi-arch BIND 9 container"
-   gh repo create udp1024/bind9-docker --public --source=. --push
-   ```
+```bash
+# Query the local BIND 9 instance
+dig @127.0.0.1 -p 53 example.com
 
-2. Add two repository secrets in GitHub (`Settings -> Secrets and variables -> Actions`):
-   * `DOCKERHUB_USERNAME`: Your Docker Hub username (e.g. `udp1024`)
-   * `DOCKERHUB_TOKEN`: A Docker Hub Personal Access Token (Read & Write permissions)
+# Check version inside the container
+docker exec -it bind9 named -v
+```
 
-3. Trigger the workflow manually from the **Actions** tab, or wait for the scheduled daily runner (`06:00 UTC`).
+---
+
+## 🔗 Links & Source Code
+
+* **GitHub Repository:** [udp1024/bind9-docker](https://github.com/udp1024/bind9-docker)
+* **ISC BIND 9 Official Site:** [isc.org/bind](https://www.isc.org/bind/)
+* **Upstream Launchpad PPA:** [ppa:isc/bind](https://launchpad.net/~isc/+archive/ubuntu/bind)
