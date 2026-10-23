@@ -2,3 +2,11 @@
 *.log
 *.tar
 *.tar.gz
+
+# Backups and keys
+*-backup/
+*backup*/
+*.key
+*.private
+*.jnl
+
