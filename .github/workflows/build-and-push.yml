@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       force_build:
-        description: 'Force build even if version already exists on Docker Hub'
+        description: 'Force build even if our current release already matches upstream'
         required: false
         type: boolean
         default: false
@@ -58,24 +58,31 @@ jobs:
           echo "version=$CLEAN_VER" >> $GITHUB_OUTPUT
           echo "major_minor=$MAJOR_MINOR" >> $GITHUB_OUTPUT
 
-      - name: Check if image tag already exists on Docker Hub
+      - name: Compare upstream version with our current release
         id: check_tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_VER: ${{ steps.get_version.outputs.version }}
+          FORCE: ${{ github.event.inputs.force_build }}
         run: |
-          TARGET_VER="${{ steps.get_version.outputs.version }}"
-          FORCE="${{ github.event.inputs.force_build }}"
-          
-          if [ "$FORCE" = "true" ] || [ "${{ github.event_name }}" = "push" ]; then
-            echo "Forced build or direct push detected. Proceeding with build."
+          if [ "$FORCE" = "true" ]; then
+            echo "Forced build requested. Proceeding with build."
             echo "should_build=true" >> $GITHUB_OUTPUT
             exit 0
           fi
-          
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://hub.docker.com/v2/repositories/${DOCKER_IMAGE}/tags/${TARGET_VER}")
-          if [ "$HTTP_STATUS" -eq 200 ]; then
-            echo "Tag ${TARGET_VER} already exists on Docker Hub. Skipping build."
+
+          # Our current release is the latest GitHub release (tagged v<bind version>)
+          CURRENT_TAG=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName 2>/dev/null || true)
+          HUB_STATUS=$(curl -s -o /dev/null --retry 5 --retry-all-errors --retry-delay 5 --max-time 30 -w "%{http_code}" "https://hub.docker.com/v2/repositories/${DOCKER_IMAGE}/tags/${TARGET_VER}")
+          echo "Upstream PPA version: ${TARGET_VER}"
+          echo "Current release tag:  ${CURRENT_TAG:-<none>}"
+          echo "Docker Hub tag ${TARGET_VER}: HTTP ${HUB_STATUS}"
+
+          if [ "$CURRENT_TAG" = "v${TARGET_VER}" ] && [ "$HUB_STATUS" = "200" ]; then
+            echo "Current release matches upstream. Nothing to build."
             echo "should_build=false" >> $GITHUB_OUTPUT
           else
-            echo "Tag ${TARGET_VER} NOT found on Docker Hub (HTTP $HTTP_STATUS). Triggering build."
+            echo "Current release does not match upstream. Triggering build."
             echo "should_build=true" >> $GITHUB_OUTPUT
           fi
 
