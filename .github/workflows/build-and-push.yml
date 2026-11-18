@@ -41,7 +41,7 @@ jobs:
         run: |
           set -e
           PPA_URL="https://ppa.launchpadcontent.net/isc/bind/ubuntu/dists/noble/main/binary-arm64/Packages.gz"
-          FULL_VER=$(curl -fsSL "$PPA_URL" | zcat | awk -v RS= '/Package: bind9\n/' | grep '^Version:' | head -n 1 | awk '{print $2}')
+          FULL_VER=$(curl -fsSL --retry 8 --retry-all-errors --retry-delay 5 --connect-timeout 15 --max-time 60 "$PPA_URL" | zcat | awk -v RS= '/Package: bind9\n/' | grep '^Version:' | head -n 1 | awk '{print $2}')
           echo "Full package version: $FULL_VER"
           
           # Extract upstream release version, e.g. from 1:9.20.30-1+ubuntu... -> 9.20.30
